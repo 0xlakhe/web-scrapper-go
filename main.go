@@ -3,9 +3,11 @@ package main
 import (
 	"errors"
 	"fmt"
-	"golang.org/x/net/html"
+	"io"
 	"net/http"
 	"strings"
+
+	"golang.org/x/net/html"
 )
 
 var errorQueueEmpty = errors.New("queue is empty")
@@ -34,9 +36,10 @@ func main() {
 	baseUrl := "https://web-scraping.dev"
 	htmlUrls := map[string][]string{}
 	queue := queue[string]{}
-
+	queue.enqueue(baseUrl)
+	allUrls:=map[string]int{}
+	allUrls[baseUrl]=1;
 	for {
-		queue.enqueue(baseUrl)
 		url, err := queue.dequeue()
 		if err != nil {
 			if errors.Is(err, errorQueueEmpty) {
@@ -47,11 +50,12 @@ func main() {
 				return
 			}
 		}
-		urls, err := downloadLink(url, queue)
+		urls, err := downloadLink(url, &queue,allUrls)
 		if err != nil {
 			fmt.Println(err)
 			return
 		}
+		fmt.Printf("\n\n, %v",urls)
 		htmlUrls[url] = urls
 	}
 
@@ -66,19 +70,22 @@ func main() {
 	// fmt.Println(htmlUrls)
 }
 
-func downloadLink(url string, queue queue[string]) ([]string, error) {
+func downloadLink(url string, queue *queue[string], allUrls map[string]int) ([]string, error) {
 	resp, err := http.Get(url)
 	if err != nil {
 		return nil, err
 	}
 	token := html.NewTokenizer(resp.Body)
 	result := []string{}
-	urls := map[string]int{}
-outer:
+
 	for {
 		tokenType := token.Next()
 		switch tokenType {
 		case html.ErrorToken:
+			if token.Err()==io.EOF{
+				fmt.Println("reached end of file")
+				return result,nil
+			}
 			return nil, fmt.Errorf("error: %v", token.Token().Data)
 		case html.StartTagToken:
 			t := token.Token()
@@ -90,21 +97,16 @@ outer:
 						if toAdd==url{
 							continue
 						}
-						if _, ok := urls[toAdd]; !ok {
+						if _, ok := allUrls[toAdd]; !ok {
 							result = append(result, toAdd)
 							queue.enqueue(toAdd)
 						}
-						urls[toAdd] = 1
+						allUrls[toAdd] = 1
 					}
 				}
 			}
-		case html.EndTagToken:
-			if token.Token().Data == "html" {
-				break outer
-			}
 		}
 	}
-	return result, nil
 }
 
 func urlNormalization(baseUrl string, url string) string {
