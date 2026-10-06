@@ -4,10 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"time"
 
 	"net/http"
 	"net/url"
-
 
 	"golang.org/x/net/html"
 )
@@ -39,31 +39,50 @@ func main() {
 	htmlUrls := map[string][]string{}
 	queue := queue[string]{}
 	queue.enqueue(baseUrl)
-	allUrls:=map[string]int{}
-	allUrls[baseUrl]=1;
-	for {
+	allUrls := map[string]int{}
+	allUrls[baseUrl] = 1
+	maxPages:=50
+	currentPage:=0
+	for  currentPage<maxPages {
 		baseURL, err := queue.dequeue()
 		if err != nil {
 			if errors.Is(err, errorQueueEmpty) {
 				fmt.Println(err)
-				break 
+				break
 			} else {
 				fmt.Println(err)
 				return
 			}
 		}
-		urls, err := downloadLink(baseURL, &queue,allUrls)
+		urls, err := downloadLink(baseURL)
+
+		allLinks:=[]string{}
+		//adding links to map
+		for _,link:=range urls{
+			
+			//adding link to queue
+			if _,ok:=allUrls[link];!ok{
+				allLinks=append(allLinks, link)
+				queue.enqueue(link)
+			}
+			allUrls[link]=1
+		}
+
 		if err != nil {
 			fmt.Println(err)
 			return
 		}
-		fmt.Printf("\n\n, %v",urls)
-		htmlUrls[baseURL] = urls
+		fmt.Printf("\n\n, %v", htmlUrls)
+
+		//saving urls 
+		htmlUrls[baseURL] = allLinks
+		time.Sleep(2 * time.Second)
+		currentPage+=1
 	}
 
 }
 
-func downloadLink(baseURL string, queue *queue[string], allUrls map[string]int) ([]string, error) {
+func downloadLink(baseURL string) ([]string, error) {
 	resp, err := http.Get(baseURL)
 	if err != nil {
 		return nil, err
@@ -75,9 +94,9 @@ func downloadLink(baseURL string, queue *queue[string], allUrls map[string]int) 
 		tokenType := token.Next()
 		switch tokenType {
 		case html.ErrorToken:
-			if token.Err()==io.EOF{
+			if token.Err() == io.EOF {
 				fmt.Println("reached end of file")
-				return result,nil
+				return result, nil
 			}
 			return nil, fmt.Errorf("error: %v", token.Token().Data)
 		case html.StartTagToken:
@@ -86,25 +105,20 @@ func downloadLink(baseURL string, queue *queue[string], allUrls map[string]int) 
 
 				for _, attribute := range t.Attr {
 					if attribute.Key == "href" {
-						u,err:=url.Parse(attribute.Val)
+						relativeURL, err := url.Parse(attribute.Val)
 
-						if err!=nil{
+						if err != nil {
 							continue
 						}
-						base,err:=url.Parse(baseURL)
-						if err!=nil{
+						base, err := url.Parse(baseURL)
+						if err != nil {
 							continue
 						}
-						toAdd:=base.ResolveReference(u)
-						if _, ok := allUrls[toAdd.String()]; !ok {
-							result = append(result, toAdd.String())
-							queue.enqueue(toAdd.String())
-						}
-						allUrls[toAdd.String()] = 1
+						toAdd := base.ResolveReference(relativeURL)
+						result=append(result,toAdd.String())
 					}
 				}
 			}
 		}
 	}
 }
-
