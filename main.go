@@ -4,8 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+
 	"net/http"
-	"strings"
+	"net/url"
+
 
 	"golang.org/x/net/html"
 )
@@ -33,14 +35,14 @@ func (q *queue[T]) dequeue() (T, error) {
 }
 
 func main() {
-	baseUrl := "https://web-scraping.dev"
+	baseUrl := "https://web-scraping.dev/"
 	htmlUrls := map[string][]string{}
 	queue := queue[string]{}
 	queue.enqueue(baseUrl)
 	allUrls:=map[string]int{}
 	allUrls[baseUrl]=1;
 	for {
-		url, err := queue.dequeue()
+		baseURL, err := queue.dequeue()
 		if err != nil {
 			if errors.Is(err, errorQueueEmpty) {
 				fmt.Println(err)
@@ -50,28 +52,19 @@ func main() {
 				return
 			}
 		}
-		urls, err := downloadLink(url, &queue,allUrls)
+		urls, err := downloadLink(baseURL, &queue,allUrls)
 		if err != nil {
 			fmt.Println(err)
 			return
 		}
 		fmt.Printf("\n\n, %v",urls)
-		htmlUrls[url] = urls
+		htmlUrls[baseURL] = urls
 	}
 
-	// for _, url := range urls {
-	// 	link, err := downloadLink(url)
-	// 	if err != nil {
-	// 		fmt.Println(err)
-	// 		return
-	// 	}
-	// 	htmlUrls[url] = link
-	// }
-	// fmt.Println(htmlUrls)
 }
 
-func downloadLink(url string, queue *queue[string], allUrls map[string]int) ([]string, error) {
-	resp, err := http.Get(url)
+func downloadLink(baseURL string, queue *queue[string], allUrls map[string]int) ([]string, error) {
+	resp, err := http.Get(baseURL)
 	if err != nil {
 		return nil, err
 	}
@@ -93,15 +86,21 @@ func downloadLink(url string, queue *queue[string], allUrls map[string]int) ([]s
 
 				for _, attribute := range t.Attr {
 					if attribute.Key == "href" {
-						toAdd := urlNormalization(url, attribute.Val)
-						if toAdd==url{
+						u,err:=url.Parse(attribute.Val)
+
+						if err!=nil{
 							continue
 						}
-						if _, ok := allUrls[toAdd]; !ok {
-							result = append(result, toAdd)
-							queue.enqueue(toAdd)
+						base,err:=url.Parse(baseURL)
+						if err!=nil{
+							continue
 						}
-						allUrls[toAdd] = 1
+						toAdd:=base.ResolveReference(u)
+						if _, ok := allUrls[toAdd.String()]; !ok {
+							result = append(result, toAdd.String())
+							queue.enqueue(toAdd.String())
+						}
+						allUrls[toAdd.String()] = 1
 					}
 				}
 			}
@@ -109,13 +108,3 @@ func downloadLink(url string, queue *queue[string], allUrls map[string]int) ([]s
 	}
 }
 
-func urlNormalization(baseUrl string, url string) string {
-	if strings.Contains(url, "https") {
-		return url
-	}
-	if url == "#" {
-		return baseUrl
-	} else {
-		return baseUrl + url
-	}
-}
