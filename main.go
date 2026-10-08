@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"time"
 
 	"net/http"
 	"net/url"
@@ -41,9 +40,10 @@ func main() {
 	queue.enqueue(baseUrl)
 	allUrls := map[string]int{}
 	allUrls[baseUrl] = 1
-	maxPages:=50
-	currentPage:=0
-	for  currentPage<maxPages {
+	maxPages := 20
+	currentPage := 1
+	for currentPage < maxPages {
+		fmt.Printf("ID: %d\n", currentPage)
 		baseURL, err := queue.dequeue()
 		if err != nil {
 			if errors.Is(err, errorQueueEmpty) {
@@ -56,16 +56,16 @@ func main() {
 		}
 		urls, err := downloadLink(baseURL)
 
-		allLinks:=[]string{}
+		allLinks := []string{}
 		//adding links to map
-		for _,link:=range urls{
-			
+		for _, link := range urls {
+
 			//adding link to queue
-			if _,ok:=allUrls[link];!ok{
-				allLinks=append(allLinks, link)
+			if _, ok := allUrls[link]; !ok {
+				allLinks = append(allLinks, link)
 				queue.enqueue(link)
 			}
-			allUrls[link]=1
+			allUrls[link] = 1
 		}
 
 		if err != nil {
@@ -74,10 +74,9 @@ func main() {
 		}
 		fmt.Printf("\n\n, %v", htmlUrls)
 
-		//saving urls 
+		//saving urls
 		htmlUrls[baseURL] = allLinks
-		time.Sleep(2 * time.Second)
-		currentPage+=1
+		currentPage += 1
 	}
 
 }
@@ -115,7 +114,7 @@ func downloadLink(baseURL string) ([]string, error) {
 							continue
 						}
 						toAdd := base.ResolveReference(relativeURL)
-						result=append(result,toAdd.String())
+						result = append(result, toAdd.String())
 					}
 				}
 			}
