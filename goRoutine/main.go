@@ -19,13 +19,14 @@ type crawlResult struct {
 
 func workers(receiveURL <-chan string, sendURL chan<- crawlResult) {
 
-	url := <-receiveURL
-	links, err := downloadLink(url)
-	if err != nil {
-		sendURL <- crawlResult{url, nil, err}
+	for url:=range receiveURL{
+		links, err := downloadLink(url)
+		if err != nil {
+			sendURL <- crawlResult{url, nil, err}
+		}
+		
+		sendURL <- crawlResult{url, links, nil}
 	}
-
-	sendURL <- crawlResult{url, links, nil}
 }
 
 func main() {
@@ -41,17 +42,20 @@ func main() {
 	var wg sync.WaitGroup
 
 	maxWorkers := 5
-	sem := make(chan struct{}, maxWorkers)
-	for range 10 {
+	for range maxWorkers {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			sem <- struct{}{}
 			workers(receiveURL, sendURL)
-			<-sem
 		}()
 	}
 
+	go func(){
+		wg.Wait()
+		close(sendURL)
+	}()
+	crawlLimit:=20
+	check:=false
 	for urls := range sendURL {
 		if urls.err!=nil{
 			log.Print(urls.err)
@@ -62,15 +66,22 @@ func main() {
 			if _, ok := allLinks[url]; !ok {
 				allLinks[url] = 1
 				toAdd = append(toAdd, url)
+				crawlLimit-=1
+				if check==true{
+					continue
+				}
+				if crawlLimit<1{
+					close(receiveURL)
+					check=true
+					continue
+				}
+
 				receiveURL<-url
 			}
 		}
 		allURLs[urls.baseURL] = toAdd
 	}
 
-	close(receiveURL)
-	wg.Wait()
-	close(sendURL)
 	fmt.Println(allURLs)
 }
 
